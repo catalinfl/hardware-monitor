@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/a-h/templ"
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
@@ -11,7 +12,11 @@ func main() {
 
 	fmt.Println("Starting server on port :8080")
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	component := hello("world")
+
+	http.Handle("/", templ.Handler(component))
+
+	http.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Method == "GET" {
 			fmt.Println("Request received")
