@@ -1,5 +1,171 @@
 package main
 
 templ hello(name string) {
-    <div> Hello, { name } </div>
+    <html>
+    <head>
+        <link href="https://unpkg.com/tailwindcss@^1.0/dist/tailwind.min.css" rel="stylesheet">
+        <link href="./assets/styles.css" rel="stylesheet">
+        <title>Hello Template</title>        
+        <script>
+            var memoryData = {};
+            var chartInstance = null;
+            var data = null;
+            var socket;
+            var setButton = "memory";
+            var intervalId;
+            var firstHash = true;
+
+            function connectWebSocket() {
+                socket = new WebSocket("ws://localhost:8080/ws");
+
+                socket.onopen = function(event) {
+                    setInterval(() => {
+                        firstHash = true;
+                    }, 30000);
+
+                    setIntervalHandler();
+                };
+
+                socket.onmessage = function(event) {
+                    data = JSON.parse(event.data);
+                    if (data.memory) {
+                        const memoryDiv = document.createElement('div');
+                        memoryDiv.classList.add('bg-gray-800', 'text-white', 'p-4', 'mb-4');
+                        document.querySelector('.info').innerText = "";
+                        for (let [key, value] of Object.entries(data.memory)) {
+                            const p = document.createElement('p');
+                            p.innerText = `${key}: ${value}`;
+                            if (firstHash === true) {
+                                memoryData[key] = parseFloat(value.split(" ")[0]);
+                            }
+                            memoryDiv.appendChild(p);
+                        }
+                        document.querySelector('.info').appendChild(memoryDiv);
+                        if (firstHash === true) {
+                            initializeChart();
+                        }
+                        firstHash = false;
+                    }
+                };
+
+                socket.onclose = function(event) {
+                    console.log("WebSocket is closed now. Reconnecting...");
+                    setTimeout(connectWebSocket, 1000); // Reconnect after 1 second
+                };
+
+                socket.onerror = function(error) {
+                    console.log("WebSocket error:", error);
+                };
+            }
+
+            function setIntervalHandler() {
+                if (intervalId) {
+                    clearInterval(intervalId);
+                }
+
+                if (setButton === "memory") {
+                    intervalId = setInterval(fetchMemoryInfo, 2000);
+                } else if (setButton === "os") {
+                    intervalId = setInterval(fetchOSInfo, 2000);
+                } else if (setButton === "process") {
+                    intervalId = setInterval(fetchProcessInfo, 2000);
+                }
+            }
+
+            async function fetchMemoryInfo() {
+                try {
+                    setButton = "memory";
+                    setIntervalHandler();
+                    socket.send("fetchMemoryInfo");
+                } catch (error) {
+                    console.error('Error fetching memory info:', error);
+                }
+            }
+
+            async function fetchOSInfo() {
+                try {
+                    setButton = "os";
+                    setIntervalHandler();
+                    socket.send("fetchOSInfo");
+                } catch (error) {
+                    console.error('Error fetching OS info:', error);
+                }
+            }
+
+            async function fetchProcessInfo() {
+                try {
+                    setButton = "process";
+                    setIntervalHandler();
+                    socket.send("fetchProcessInfo");
+                } catch (error) {
+                    console.error('Error fetching process info:', error);
+                }
+            }
+
+            function initializeChart() {
+                const ctx = document.getElementById('myChart').getContext('2d');
+                document.getElementById('myChart').style.display = 'block';
+
+                if (chartInstance !== null) {
+                    chartInstance.destroy();
+                    chartInstance = null;
+                }
+
+                chartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Total', 'Used', 'Free', 'Available'],
+                        datasets: [{
+                            label: 'Memory usage',
+                            backgroundColor: [
+                                'rgba(255, 99, 132, 0.2)', // Red
+                                'rgba(54, 162, 235, 0.2)', // Blue
+                                'rgba(255, 206, 86, 0.2)', // Yellow
+                                'rgba(75, 192, 192, 0.2)'  // Green
+                            ],
+                            borderColor: [
+                                'rgba(255, 99, 132, 1)', // Red
+                                'rgba(54, 162, 235, 1)', // Blue
+                                'rgba(255, 206, 86, 1)', // Yellow
+                                'rgba(75, 192, 192, 1)'  // Green
+                            ],
+                            data: [memoryData.Total, memoryData.Used, memoryData.Free, memoryData.Available],
+                            borderWidth: 2
+                        }]
+                    },
+                });
+            }
+
+            function closeChart() {
+                if (chartInstance) {
+                    chartInstance.destroy();
+                    chartInstance = null;
+                }
+            }
+
+            window.onload = () => {
+                connectWebSocket();
+                document.getElementById('memory-btn').addEventListener('click', fetchMemoryInfo);
+                document.getElementById('process-btn').addEventListener('click', fetchProcessInfo);
+                document.getElementById('os-btn').addEventListener('click', fetchOSInfo);
+
+                fetchMemoryInfo();
+            };
+        </script>
+    </head>
+    <body class="bg-black">
+        <div class="p-4">
+            <button id="memory-btn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">Memory</button>
+            <button id="process-btn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">Processes</button>
+            <button id="os-btn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">OS</button>
+        </div>
+        <div class="info p-4"></div>
+        <div class="w-1/3 flex content-center mx-auto">
+            <div class="flex w-full justify-center items-center">
+                <canvas id="myChart"></canvas>
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    </body>
+    </html>
 }
