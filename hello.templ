@@ -13,144 +13,316 @@ templ hello(name string) {
             var socket;
             var setButton = "memory";
             var intervalId;
-            var firstHash = true;
+            var firstHash = false;
+            var secondClickOnMemory = false;
+            var isInputFocused = false;
 
-            function connectWebSocket() {
-                socket = new WebSocket("ws://localhost:8080/ws");
+        function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:8080/ws");
 
-                socket.onopen = function(event) {
-                    setInterval(() => {
-                        firstHash = true;
-                    }, 30000);
+            socket.onopen = function(event) {
+                setInterval(() => {
+                    firstHash = false;
+                }, 30000);
 
-                    setIntervalHandler();
-                };
+                setIntervalHandler();
+            };
 
-                socket.onmessage = function(event) {
-                    data = JSON.parse(event.data);
-                    if (data.memory) {
-                        const memoryDiv = document.createElement('div');
-                        memoryDiv.classList.add('bg-gray-800', 'text-white', 'p-4', 'mb-4');
-                        document.querySelector('.info').innerText = "";
-                        for (let [key, value] of Object.entries(data.memory)) {
+            socket.onmessage = function(event) {
+                data = JSON.parse(event.data);
+                const type = data?.type;
+                console.log(type);
+                if (type === "memory") {
+                    const memoryDiv = document.createElement('div');
+                    memoryDiv.classList.add('bg-gray-800', 'text-white', 'p-4', 'mb-4');
+                    document.querySelector('.info').innerText = "";
+                    for (let [key, value] of Object.entries(data)) {
+                        if (key === "type" || key === "memory") {
+                            continue;
+                        }
+                        const p = document.createElement('p');
+                        p.innerText = `${key}: ${value}`;
+                        if (!firstHash || !secondClickOnMemory) {
+                            memoryData[key] = parseFloat(value.split(" ")[0]);
+                        }
+                        memoryDiv.appendChild(p);
+                    }
+                    document.querySelector('.info').appendChild(memoryDiv);
+                    if (!firstHash || !secondClickOnMemory) {
+                        initializeChart();
+                        // Reset after rendering the chart
+                    }
+                    secondClickOnMemory = false; 
+                    firstHash = true;
+                }
+                if (type === "os") {
+                    document.querySelector('.info').innerText = "";
+                    const osDiv = document.createElement('div');
+                    osDiv.classList.add('bg-gray-800', 'text-white', 'p-4', 'mb-4');
+                    document.querySelector('.info').innerText = "";
+                    for (let [key, value] of Object.entries(data)) {
+                        if (key === "type") {
+                            continue;
+                        }
+                        const p = document.createElement('p');
+                        p.innerText = `${key}: ${value}`;
+                        osDiv.appendChild(p);
+                    }
+                    document.querySelector('.info').appendChild(osDiv);
+                    closeChart();
+                }
+                if (type === "process") {
+                    // create info for processes
+                    document.querySelector('.info').innerText = "";
+                    const processesInfo = document.createElement('div');
+                    processesInfo.classList.add('bg-gray-800', 'text-white', 'p-4', 'mb-4');
+                    processesInfo.innerText = data.processes.length + " processes running";
+
+                    const searchInput = document.createElement('input');
+                    searchInput.setAttribute('type', 'text');
+                    searchInput.setAttribute('placeholder', 'Search process');
+                    searchInput.classList.add('bg-gray-700', "focus:bg-black", "focus:outline-none", 'w-1/2', 'flex', 'flex-col', 'my-4', 'text-white', 'p-2', 'mb-4');
+                    searchInput.addEventListener('input', (event) => {
+                        const searchValue = event.target.value;
+                        const processDivs = document.querySelectorAll('.process-div');
+                        
+                        processDivs.forEach((div) => {
+                            const processName = div.querySelector('.process-name').innerText;
+
+                            if (processName.toLowerCase().includes(searchValue.toLowerCase())) {
+                                div.style.display = 'block';
+                            } else {
+                                div.style.display = 'none';
+                            }
+                        });
+                    });
+
+                    searchInput.addEventListener('focus', (event) => {
+                        isInputFocused = true;
+                        clearInterval(intervalId);
+                        intervalId = null;
+                    });
+
+                    searchInput.addEventListener('blur', (event) => {
+                        isInputFocused = false;
+                        setIntervalHandler();
+                    });
+
+
+
+                    processesInfo.appendChild(searchInput);
+                    document.querySelector('.info').appendChild(processesInfo);
+                    
+                    // processes mapping
+                    const processDiv = document.createElement('div');
+                    processDiv.classList.add('bg-gray-800', 'text-white', 'p-4', 'mb-4');
+                    for (process of data.processes) {
+                        const div = document.createElement('div');
+                        div.classList.add('bg-gray-700', 'px-4', 'mb-4', 'break-words', 'process-div')
+                        for (let [key, value] of Object.entries(process)) {
+                            const p = document.createElement('p');
+                            if (key === "Name") {
+                                p.classList.add('process-name');
+                            }
+                            p.innerText = `${key} : ${value}`;
+                            div.appendChild(p);
+                        }
+                        processDiv.appendChild(div);
+                    }
+                    document.querySelector('.info').appendChild(processDiv);
+                    closeChart();
+                }
+                if (type === "cpu") {
+                    document.querySelector('.info').innerText = "";
+                    const cpuDiv = document.createElement('div');
+                    cpuDiv.classList.add('bg-gray-800', 'text-white', 'p-4', 'mb-4');
+                    
+                    if (data.cpuInfo) {
+                        const cpuInfoDiv = document.createElement('div');
+                        data.cpuInfo.forEach((info, index) => {
+                            const infoDiv = document.createElement('div');
+                            infoDiv.classList.add('bg-gray-700', 'p-4', 'mb-4');
+                            for (let [key, value] of Object.entries(info)) {
+                                const p = document.createElement('p');
+                                p.innerText = `${key}: ${value}`;
+                                infoDiv.appendChild(p);
+                            }
+                            cpuInfoDiv.appendChild(infoDiv);
+                        })
+                        cpuDiv.appendChild(cpuInfoDiv);
+                    }
+
+                    if (data.cpuTimes) {
+                        const cpuTimesDiv = document.createElement('div');
+                        cpuTimesDiv.classList.add('bg-gray-700', 'p-4', 'mb-4');
+                        data.cpuTimes.forEach((cpu, index) => {
+                            const cpuTimeDiv = document.createElement('div');
+                            cpuTimeDiv.classList.add('bg-gray-800', 'p-4', 'mb-4');
+                            for (let [key, value] of Object.entries(cpu)) {
+                                const p = document.createElement('p');
+                                p.innerText = `${key}: ${value}`;
+                                cpuTimeDiv.appendChild(p);
+                            }
+                            cpuTimesDiv.appendChild(cpuTimeDiv);
+                        })
+                        cpuDiv.appendChild(cpuTimesDiv);
+                    }
+
+                    document.querySelector('.info').appendChild(cpuDiv);
+                    closeChart();
+                }
+                if (type === "network") {
+                    const netDiv = document.createElement('div');
+                    netDiv.classList.add('bg-gray-800', 'text-white', 'p-4')
+                    document.querySelector('.info').innerText = "";
+
+                    data.net.forEach((network, index) => {
+                        const singleNetworkDiv = document.createElement('div');
+                        singleNetworkDiv.classList.add('bg-gray-700', 'p-4', 'mb-4')
+                        for (let [key, value] of Object.entries(network)) {
                             const p = document.createElement('p');
                             p.innerText = `${key}: ${value}`;
-                            if (firstHash === true) {
-                                memoryData[key] = parseFloat(value.split(" ")[0]);
-                            }
-                            memoryDiv.appendChild(p);
+                            singleNetworkDiv.appendChild(p);
                         }
-                        document.querySelector('.info').appendChild(memoryDiv);
-                        if (firstHash === true) {
-                            initializeChart();
-                        }
-                        firstHash = false;
-                    }
-                };
+                        netDiv.appendChild(singleNetworkDiv);
+                    })
+                    closeChart();
+                    document.querySelector('.info').appendChild(netDiv);
+                }
+            };
 
-                socket.onclose = function(event) {
-                    console.log("WebSocket is closed now. Reconnecting...");
-                    setTimeout(connectWebSocket, 1000); // Reconnect after 1 second
-                };
+            socket.onclose = function(event) {
+                console.log("WebSocket is closed now. Reconnecting...");
+                setTimeout(connectWebSocket, 1000); // Reconnect after 1 second
+            };
 
-                socket.onerror = function(error) {
-                    console.log("WebSocket error:", error);
-                };
+            socket.onerror = function(error) {
+                console.log("WebSocket error:", error);
+            };
+        }
+
+        function setIntervalHandler() {
+            if (intervalId) {
+                clearInterval(intervalId);
             }
 
-            function setIntervalHandler() {
-                if (intervalId) {
-                    clearInterval(intervalId);
-                }
-
+            if (!isInputFocused) {
                 if (setButton === "memory") {
                     intervalId = setInterval(fetchMemoryInfo, 2000);
                 } else if (setButton === "os") {
                     intervalId = setInterval(fetchOSInfo, 2000);
                 } else if (setButton === "process") {
                     intervalId = setInterval(fetchProcessInfo, 2000);
+                } else if (setButton === "cpu") {
+                    intervalId = setInterval(fetchCPUInfo, 2000);
+                } else if (setButton === "network") {
+                    intervalId = setInterval(fetchNetworkInfo, 2000);
                 }
             }
 
-            async function fetchMemoryInfo() {
-                try {
+        }
+
+        async function fetchMemoryInfo() {
+            try {
+                if (setButton === "memory") {
+                    secondClickOnMemory = true;
+                } else {
                     setButton = "memory";
                     setIntervalHandler();
-                    socket.send("fetchMemoryInfo");
-                } catch (error) {
-                    console.error('Error fetching memory info:', error);
                 }
+                socket.send("fetchMemoryInfo");
+            } catch (error) {
+                console.error('Error fetching memory info:', error);
             }
+        }
 
-            async function fetchOSInfo() {
-                try {
-                    setButton = "os";
-                    setIntervalHandler();
-                    socket.send("fetchOSInfo");
-                } catch (error) {
-                    console.error('Error fetching OS info:', error);
-                }
+        async function fetchOSInfo() {
+            try {
+                setButton = "os";
+                setIntervalHandler();
+                socket.send("fetchOSInfo");
+            } catch (error) {
+                console.error('Error fetching OS info:', error);
             }
+        }
 
-            async function fetchProcessInfo() {
-                try {
-                    setButton = "process";
-                    setIntervalHandler();
-                    socket.send("fetchProcessInfo");
-                } catch (error) {
-                    console.error('Error fetching process info:', error);
-                }
+        async function fetchNetworkInfo() {
+            try {
+                setButton = "network";
+                setIntervalHandler();
+                socket.send("fetchNetworkInfo");
+            } catch (error) {
+                console.error('Error fetching network info:', error);
             }
+        }
 
-            function initializeChart() {
-                const ctx = document.getElementById('myChart').getContext('2d');
-                document.getElementById('myChart').style.display = 'block';
-
-                if (chartInstance !== null) {
-                    chartInstance.destroy();
-                    chartInstance = null;
-                }
-
-                chartInstance = new Chart(ctx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: ['Total', 'Used', 'Free', 'Available'],
-                        datasets: [{
-                            label: 'Memory usage',
-                            backgroundColor: [
-                                'rgba(255, 99, 132, 0.2)', // Red
-                                'rgba(54, 162, 235, 0.2)', // Blue
-                                'rgba(255, 206, 86, 0.2)', // Yellow
-                                'rgba(75, 192, 192, 0.2)'  // Green
-                            ],
-                            borderColor: [
-                                'rgba(255, 99, 132, 1)', // Red
-                                'rgba(54, 162, 235, 1)', // Blue
-                                'rgba(255, 206, 86, 1)', // Yellow
-                                'rgba(75, 192, 192, 1)'  // Green
-                            ],
-                            data: [memoryData.Total, memoryData.Used, memoryData.Free, memoryData.Available],
-                            borderWidth: 2
-                        }]
-                    },
-                });
+        async function fetchProcessInfo() {
+            try {
+                setButton = "process";
+                setIntervalHandler();
+                socket.send("fetchProcessInfo");
+            } catch (error) {
+                console.error('Error fetching process info:', error);
             }
+        }
 
-            function closeChart() {
-                if (chartInstance) {
-                    chartInstance.destroy();
-                    chartInstance = null;
-                }
+        async function fetchCPUInfo() {
+            try {
+                setButton = "cpu";
+                setIntervalHandler();
+                socket.send("fetchCPUInfo");
+            } catch (error) {
+                console.error('Error fetching CPU info:', error);
             }
+        }
 
-            window.onload = () => {
-                connectWebSocket();
-                document.getElementById('memory-btn').addEventListener('click', fetchMemoryInfo);
-                document.getElementById('process-btn').addEventListener('click', fetchProcessInfo);
-                document.getElementById('os-btn').addEventListener('click', fetchOSInfo);
+        function initializeChart() {
+            const ctx = document.getElementById('myChart').getContext('2d');
+            document.getElementById('myChart').style.display = 'block';
 
-                fetchMemoryInfo();
-            };
+            closeChart();
+
+            chartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Total', 'Used', 'Free', 'Available'],
+                    datasets: [{
+                        label: 'Memory usage',
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.2)', // Red
+                            'rgba(54, 162, 235, 0.2)', // Blue
+                            'rgba(255, 206, 86, 0.2)', // Yellow
+                            'rgba(75, 192, 192, 0.2)'  // Green
+                        ],
+                        borderColor: [
+                            'rgba(255, 99, 132, 1)', // Red
+                            'rgba(54, 162, 235, 1)', // Blue
+                            'rgba(255, 206, 86, 1)', // Yellow
+                            'rgba(75, 192, 192, 1)'  // Green
+                        ],
+                        data: [memoryData.Total, memoryData.Used, memoryData.Free, memoryData.Available],
+                        borderWidth: 2
+                    }]
+                },
+            });
+        }
+
+        function closeChart() {
+            if (chartInstance) {
+                chartInstance.destroy();
+                chartInstance = null;
+            }
+        }
+
+        window.onload = () => {
+            connectWebSocket();
+            document.getElementById('memory-btn').addEventListener('click', fetchMemoryInfo);
+            document.getElementById('process-btn').addEventListener('click', fetchProcessInfo);
+            document.getElementById('os-btn').addEventListener('click', fetchOSInfo);
+            document.getElementById('cpu-btn').addEventListener('click', fetchCPUInfo);
+            document.getElementById('network-btn').addEventListener('click', fetchNetworkInfo);
+            fetchMemoryInfo();
+        };
         </script>
     </head>
     <body class="bg-black">
@@ -158,6 +330,8 @@ templ hello(name string) {
             <button id="memory-btn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">Memory</button>
             <button id="process-btn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">Processes</button>
             <button id="os-btn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">OS</button>
+            <button id="cpu-btn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">CPU</button>
+            <button id="network-btn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">Network</button>
         </div>
         <div class="info p-4"></div>
         <div class="w-1/3 flex content-center mx-auto">

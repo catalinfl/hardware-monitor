@@ -4,19 +4,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/a-h/templ"
 	"github.com/gorilla/websocket"
+	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/shirou/gopsutil/v4/net"
 	"github.com/shirou/gopsutil/v4/process"
 )
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+	ReadBufferSize:  0,
+	WriteBufferSize: 0,
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
@@ -50,6 +53,7 @@ func main() {
 				}
 
 				memoryJSON := map[string]string{
+					"type":        "memory",
 					"Total":       fmt.Sprintf("%.3f GB", float64(memInfo.Total)/float64(1<<30)),
 					"Available":   fmt.Sprintf("%.3f GB", float64(memInfo.Available)/float64(1<<30)),
 					"Used":        fmt.Sprintf("%.3f GB", float64(memInfo.Used)/float64(1<<30)),
@@ -57,11 +61,7 @@ func main() {
 					"UsedPercent": fmt.Sprintf("%d%%", int(memInfo.UsedPercent)),
 				}
 
-				infoJSON := map[string]interface{}{
-					"memory": memoryJSON,
-				}
-
-				err = conn.WriteJSON(infoJSON)
+				err = conn.WriteJSON(memoryJSON)
 				if err != nil {
 					fmt.Println(err)
 					break
@@ -87,6 +87,7 @@ func main() {
 				formattedBootTime := time.Unix(bootTime, 0).Format("2006-01-02 15:04:05")
 
 				hostJSON := map[string]string{
+					"type":            "os",
 					"Host":            hostInfo.Hostname,
 					"OS":              strings.ToUpper(hostInfo.OS[:1]) + hostInfo.OS[1:],
 					"Platform":        hostInfo.Platform,
@@ -105,7 +106,135 @@ func main() {
 					fmt.Println(err)
 					break
 				}
+			} else if string(message) == "fetchProcessInfo" {
+				processes, err := process.Processes()
+
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+
+				processJSON := make([]map[string]string, 0)
+
+				for _, p := range processes {
+					name, _ := p.Name()
+					pid := p.Pid
+					ppid, _ := p.Ppid()
+					username, _ := p.Username()
+					cmdline, _ := p.Cmdline()
+
+					processJSON = append(processJSON, map[string]string{
+						"Name":     name,
+						"PID":      fmt.Sprintf("%d", pid),
+						"PPID":     fmt.Sprintf("%d", ppid),
+						"Username": username,
+						"Cmdline":  cmdline,
+					})
+				}
+
+				processToSend := map[string]interface{}{
+					"type":      "process",
+					"processes": processJSON,
+				}
+
+				err = conn.WriteJSON(processToSend)
+
+				if err != nil {
+					fmt.Println(err)
+					break
+				}
+
+			} else if string(message) == "fetchCPUInfo" {
+
+				cpuInfo, err := cpu.Info()
+
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+
+				cpuTimes, err := cpu.Times(true)
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+
+				cpuJSON := make([]map[string]string, 0)
+
+				for i, c := range cpuInfo {
+					cpuJSON = append(cpuJSON, map[string]string{
+						"Type":      c.ModelName,
+						"Core":      fmt.Sprintf("%d", i),
+						"Vendor":    c.VendorID,
+						"Family":    c.Family,
+						"Frequency": strconv.Itoa(int(c.Mhz)) + "MHz",
+						"Model":     c.Model,
+						"Stepping":  strconv.Itoa(int(c.Stepping)),
+					})
+				}
+
+				cpuTimesJSON := make([]map[string]string, 0)
+
+				for i, c := range cpuTimes {
+					cpuTimesJSON = append(cpuTimesJSON, map[string]string{
+						"Core":      fmt.Sprintf("%d", i),
+						"User":      fmt.Sprintf("%.2f", c.User),
+						"System":    fmt.Sprintf("%.2f", c.System),
+						"Idle":      fmt.Sprintf("%.2f", c.Idle),
+						"Nice":      fmt.Sprintf("%.2f", c.Nice),
+						"Iowait":    fmt.Sprintf("%.2f", c.Iowait),
+						"Irq":       fmt.Sprintf("%.2f", c.Irq),
+						"Softirq":   fmt.Sprintf("%.2f", c.Softirq),
+						"Steal":     fmt.Sprintf("%.2f", c.Steal),
+						"Guest":     fmt.Sprintf("%.2f", c.Guest),
+						"GuestNice": fmt.Sprintf("%.2f", c.GuestNice),
+					})
+				}
+
+				cpuToSend := map[string]interface{}{
+					"type":     "cpu",
+					"cpuInfo":  cpuJSON,
+					"cpuTimes": cpuTimesJSON,
+				}
+
+				err = conn.WriteJSON(cpuToSend)
+
+				if err != nil {
+					fmt.Println(err)
+					break
+				}
+			} else if string(message) == "fetchNetworkInfo" {
+				netInfo, err := net.IOCounters(true)
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+
+				netJSON := make([]map[string]string, 0)
+
+				for _, n := range netInfo {
+					netJSON = append(netJSON, map[string]string{
+						"Name":        n.Name,
+						"BytesSent":   fmt.Sprintf("%d", n.BytesSent),
+						"BytesRecv":   fmt.Sprintf("%d", n.BytesRecv),
+						"PacketsSent": fmt.Sprintf("%d", n.PacketsSent),
+						"PacketsRecv": fmt.Sprintf("%d", n.PacketsRecv),
+					})
+				}
+
+				netToSend := map[string]interface{}{
+					"type": "network",
+					"net":  netJSON,
+				}
+
+				err = conn.WriteJSON(netToSend)
+
+				if err != nil {
+					fmt.Println(err)
+					break
+				}
 			}
+
 		}
 	})
 
